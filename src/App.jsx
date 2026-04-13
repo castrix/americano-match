@@ -638,42 +638,50 @@ function createSharePngDataUrl(state, leaderboard, playerLookup) {
   context.fillText('Top Results', 88, 490)
 
   const topRows = leaderboard.slice(0, 10)
-  const rowStartY = 526
-  const rowHeight = 116
+  let rowCursorY = 526
 
   topRows.forEach((player, index) => {
-    const y = rowStartY + index * rowHeight
+    const isTopThree = index < 3
+    const rowHeight = isTopThree ? 116 : 84
+    const rowBoxHeight = isTopThree ? 96 : 64
+    const y = rowCursorY
     const rank = index + 1
     const rankLabel = `#${rank}`
     const diffValue = player.netPoints > 0 ? `+${player.netPoints}` : String(player.netPoints)
 
     context.fillStyle = rank === 1 ? 'rgba(46, 230, 166, 0.16)' : 'rgba(255, 255, 255, 0.04)'
-    context.fillRect(88, y, 904, 96)
+    context.fillRect(88, y, 904, rowBoxHeight)
 
     context.fillStyle = rank === 1 ? primaryColor : softColor
-    context.font = '800 32px Inter, Segoe UI, sans-serif'
-    context.fillText(rankLabel, 116, y + 58)
+    context.font = isTopThree ? '800 32px Inter, Segoe UI, sans-serif' : '800 24px Inter, Segoe UI, sans-serif'
+    context.fillText(rankLabel, 116, y + (isTopThree ? 58 : 42))
 
     context.fillStyle = textColor
-    context.font = '700 34px Inter, Segoe UI, sans-serif'
+    context.font = isTopThree ? '700 34px Inter, Segoe UI, sans-serif' : '700 26px Inter, Segoe UI, sans-serif'
     const displayName = playerLookup[player.id] ?? player.name
     const clippedName = displayName.length > 18 ? `${displayName.slice(0, 18)}…` : displayName
-    context.fillText(clippedName, 206, y + 48)
+    context.fillText(clippedName, 206, y + (isTopThree ? 48 : 34))
 
     context.fillStyle = mutedColor
-    context.font = '600 24px Inter, Segoe UI, sans-serif'
-    context.fillText(`W ${player.wins} · D ${player.draws} · Pts ${player.pointsFor}`, 206, y + 78)
+    context.font = isTopThree ? '600 24px Inter, Segoe UI, sans-serif' : '600 18px Inter, Segoe UI, sans-serif'
+    context.fillText(`W ${player.wins} · D ${player.draws} · Pts ${player.pointsFor}`, 206, y + (isTopThree ? 78 : 54))
 
     context.fillStyle = rank === 1 ? primaryColor : textColor
-    context.font = '800 32px Inter, Segoe UI, sans-serif'
-    context.fillText(diffValue, 910, y + 58)
+    context.font = isTopThree ? '800 32px Inter, Segoe UI, sans-serif' : '800 24px Inter, Segoe UI, sans-serif'
+    context.fillText(diffValue, 910, y + (isTopThree ? 58 : 42))
+
+    rowCursorY += rowHeight
   })
+
+  context.fillStyle = 'rgba(255, 255, 255, 0.04)'
+  context.fillRect(88, canvas.height - 152, 904, 92)
 
   context.fillStyle = mutedColor
   context.font = '600 20px Inter, Segoe UI, sans-serif'
-  context.fillText(new Date().toLocaleString(), 88, canvas.height - 84)
-  context.font = '500 18px Inter, Segoe UI, sans-serif'
-  context.fillText(APP_PUBLIC_URL, 88, canvas.height - 52)
+  context.fillText(new Date().toLocaleString(), 110, canvas.height - 108)
+  context.fillStyle = softColor
+  context.font = '700 28px Inter, Segoe UI, sans-serif'
+  context.fillText(APP_PUBLIC_URL, 110, canvas.height - 72)
 
   return canvas.toDataURL('image/png')
 }
