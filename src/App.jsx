@@ -4,6 +4,7 @@ import './App.css'
 const STORAGE_KEY = 'americano-match-state-v1'
 const SHARE_KEY = 'share'
 const SHARE_CIPHER_KEY = 'americano-share-v1'
+const APP_PUBLIC_URL = 'https://castrix.github.io/americano-match/'
 const DEFAULT_STATE = {
   players: [],
   courtCount: 2,
@@ -497,6 +498,201 @@ function formatStamp(timestamp) {
   }).format(new Date(timestamp))
 }
 
+function toOpaqueColor(input, fallback) {
+  if (!input) {
+    return fallback
+  }
+
+  if (input.startsWith('rgba')) {
+    const [r = '0', g = '0', b = '0'] = input
+      .replace('rgba(', '')
+      .replace(')', '')
+      .split(',')
+      .map((value) => value.trim())
+
+    return `rgb(${r}, ${g}, ${b})`
+  }
+
+  return input
+}
+
+function drawWrappedText(context, text, x, y, maxWidth, lineHeight, maxLines) {
+  const words = text.split(' ')
+  const lines = []
+  let currentLine = ''
+
+  words.forEach((word) => {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word
+
+    if (context.measureText(nextLine).width <= maxWidth || !currentLine) {
+      currentLine = nextLine
+      return
+    }
+
+    lines.push(currentLine)
+    currentLine = word
+  })
+
+  if (currentLine) {
+    lines.push(currentLine)
+  }
+
+  const renderedLines = lines.slice(0, maxLines)
+  renderedLines.forEach((line, lineIndex) => {
+    context.fillText(line, x, y + lineIndex * lineHeight)
+  })
+
+  return y + renderedLines.length * lineHeight
+}
+
+function createSharePngDataUrl(state, leaderboard, playerLookup) {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const canvas = window.document.createElement('canvas')
+  canvas.width = 1080
+  canvas.height = 1920
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    return ''
+  }
+
+  const rootStyles = window.getComputedStyle(window.document.documentElement)
+  const bgColor = toOpaqueColor(rootStyles.getPropertyValue('--panel-strong').trim(), 'rgb(13, 26, 40)')
+  const panelColor = toOpaqueColor(rootStyles.getPropertyValue('--panel').trim(), 'rgb(9, 19, 31)')
+  const primaryColor = rootStyles.getPropertyValue('--primary').trim() || '#2ee6a6'
+  const softColor = rootStyles.getPropertyValue('--soft').trim() || '#dbeafe'
+  const textColor = rootStyles.getPropertyValue('--text').trim() || '#eff6ff'
+  const mutedColor = rootStyles.getPropertyValue('--muted').trim() || '#9db0c4'
+
+  context.fillStyle = bgColor
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height)
+  gradient.addColorStop(0, 'rgba(46, 230, 166, 0.16)')
+  gradient.addColorStop(0.6, 'rgba(255, 184, 77, 0.1)')
+  gradient.addColorStop(1, 'rgba(125, 211, 252, 0.1)')
+  context.fillStyle = gradient
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  context.fillStyle = primaryColor
+  context.beginPath()
+  context.arc(920, 180, 180, 0, Math.PI * 2)
+  context.fill()
+
+  context.fillStyle = 'rgba(255, 184, 77, 0.2)'
+  context.beginPath()
+  context.arc(120, 1640, 220, 0, Math.PI * 2)
+  context.fill()
+
+  context.fillStyle = panelColor
+  context.fillRect(44, 44, canvas.width - 88, canvas.height - 88)
+
+  context.fillStyle = primaryColor
+  context.fillRect(44, 44, canvas.width - 88, 10)
+
+  context.fillStyle = softColor
+  context.font = '700 34px Inter, Segoe UI, sans-serif'
+  context.fillText('PADEL AMERICANO', 88, 118)
+
+  context.fillStyle = textColor
+  context.font = '800 66px Inter, Segoe UI, sans-serif'
+  context.fillText('LEADERBOARD', 88, 192)
+  context.font = '700 38px Inter, Segoe UI, sans-serif'
+  context.fillText('Story Snapshot', 88, 242)
+
+  const totalMatches = state.rounds.reduce((sum, round) => sum + round.matches.length, 0)
+  const completedMatches = state.rounds.reduce(
+    (sum, round) => sum + round.matches.filter((match) => isScoreComplete(match)).length,
+    0,
+  )
+  const summaryStats = [
+    { label: 'Players', value: String(state.players.length) },
+    { label: 'Courts', value: String(state.courtCount) },
+    { label: 'Rounds', value: String(state.rounds.length) },
+    { label: 'Scores', value: `${completedMatches}/${totalMatches}` },
+  ]
+
+  summaryStats.forEach((item, index) => {
+    const boxWidth = 228
+    const gap = 14
+    const x = 88 + index * (boxWidth + gap)
+    const y = 292
+
+    context.fillStyle = 'rgba(255, 255, 255, 0.04)'
+    context.fillRect(x, y, boxWidth, 136)
+
+    context.fillStyle = mutedColor
+    context.font = '600 24px Inter, Segoe UI, sans-serif'
+    context.fillText(item.label, x + 20, y + 44)
+
+    context.fillStyle = textColor
+    context.font = '800 44px Inter, Segoe UI, sans-serif'
+    context.fillText(item.value, x + 20, y + 100)
+  })
+
+  context.fillStyle = textColor
+  context.font = '700 30px Inter, Segoe UI, sans-serif'
+  context.fillText('Top Results', 88, 490)
+
+  const topRows = leaderboard.slice(0, 10)
+  const rowStartY = 526
+  const rowHeight = 116
+
+  topRows.forEach((player, index) => {
+    const y = rowStartY + index * rowHeight
+    const rank = index + 1
+    const rankLabel = `#${rank}`
+    const diffValue = player.netPoints > 0 ? `+${player.netPoints}` : String(player.netPoints)
+
+    context.fillStyle = rank === 1 ? 'rgba(46, 230, 166, 0.16)' : 'rgba(255, 255, 255, 0.04)'
+    context.fillRect(88, y, 904, 96)
+
+    context.fillStyle = rank === 1 ? primaryColor : softColor
+    context.font = '800 32px Inter, Segoe UI, sans-serif'
+    context.fillText(rankLabel, 116, y + 58)
+
+    context.fillStyle = textColor
+    context.font = '700 34px Inter, Segoe UI, sans-serif'
+    const displayName = playerLookup[player.id] ?? player.name
+    const clippedName = displayName.length > 18 ? `${displayName.slice(0, 18)}…` : displayName
+    context.fillText(clippedName, 206, y + 48)
+
+    context.fillStyle = mutedColor
+    context.font = '600 24px Inter, Segoe UI, sans-serif'
+    context.fillText(`W ${player.wins} · D ${player.draws} · Pts ${player.pointsFor}`, 206, y + 78)
+
+    context.fillStyle = rank === 1 ? primaryColor : textColor
+    context.font = '800 32px Inter, Segoe UI, sans-serif'
+    context.fillText(diffValue, 910, y + 58)
+  })
+
+  context.fillStyle = mutedColor
+  context.font = '600 20px Inter, Segoe UI, sans-serif'
+  context.fillText(new Date().toLocaleString(), 88, canvas.height - 84)
+  context.font = '500 18px Inter, Segoe UI, sans-serif'
+  context.fillText(APP_PUBLIC_URL, 88, canvas.height - 52)
+
+  return canvas.toDataURL('image/png')
+}
+
+async function dataUrlToFile(dataUrl, fileName) {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  return new File([blob], fileName, { type: 'image/png' })
+}
+
+function triggerDownload(dataUrl, fileName) {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 function App() {
   const [{ initialState, isSharedReadOnly }] = useState(() => {
     const sharedState = loadSharedState()
@@ -516,7 +712,16 @@ function App() {
   const [appState, setAppState] = useState(initialState)
   const [playerName, setPlayerName] = useState('')
   const [sharePopupUrl, setSharePopupUrl] = useState('')
+  const [sharePngPreviewUrl, setSharePngPreviewUrl] = useState('')
   const [isSharePopupOpen, setIsSharePopupOpen] = useState(false)
+  const [isGeneratingPng, setIsGeneratingPng] = useState(false)
+  const [isCopySuccess, setIsCopySuccess] = useState(false)
+  const [sectionOpen, setSectionOpen] = useState(() => ({
+    roster: !isSharedReadOnly,
+    matches: !isSharedReadOnly,
+    leaderboard: true,
+  }))
+  const [roundOpenById, setRoundOpenById] = useState({})
   const [statusMessage, setStatusMessage] = useState(() =>
     isSharedReadOnly
       ? 'Read-only shared session loaded from URL.'
@@ -540,6 +745,15 @@ function App() {
   const fairness = useMemo(() => buildFairness(players, rounds), [players, rounds])
   const leaderboard = useMemo(() => buildLeaderboard(players, rounds), [players, rounds])
 
+  useEffect(() => {
+    if (!isSharePopupOpen) {
+      return
+    }
+
+    const dataUrl = createSharePngDataUrl(appState, leaderboard, playerLookup)
+    setSharePngPreviewUrl(dataUrl)
+  }, [appState, leaderboard, playerLookup, isSharePopupOpen])
+
   const totalMatches = rounds.reduce((sum, round) => sum + round.matches.length, 0)
   const completedMatches = rounds.reduce(
     (sum, round) => sum + round.matches.filter((match) => isScoreComplete(match)).length,
@@ -550,6 +764,20 @@ function App() {
 
   function showReadOnlyMessage() {
     setStatusMessage('Shared view is read-only. Open app without share URL to edit.')
+  }
+
+  function toggleSection(key) {
+    setSectionOpen((currentState) => ({
+      ...currentState,
+      [key]: !currentState[key],
+    }))
+  }
+
+  function toggleRound(roundId) {
+    setRoundOpenById((currentState) => ({
+      ...currentState,
+      [roundId]: !(currentState[roundId] ?? !isSharedReadOnly),
+    }))
   }
 
   function handleAddPlayer(event) {
@@ -703,6 +931,7 @@ function App() {
     }
 
     setSharePopupUrl(shareUrl)
+    setSharePngPreviewUrl(createSharePngDataUrl(appState, leaderboard, playerLookup))
     setIsSharePopupOpen(true)
 
     try {
@@ -721,6 +950,8 @@ function App() {
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(sharePopupUrl)
+        setIsCopySuccess(true)
+        window.setTimeout(() => setIsCopySuccess(false), 900)
         setStatusMessage('Read-only share URL copied to clipboard.')
       } else {
         setStatusMessage('Clipboard unavailable. Copy URL from popup field.')
@@ -732,6 +963,47 @@ function App() {
 
   function handleCloseSharePopup() {
     setIsSharePopupOpen(false)
+  }
+
+  async function handleGenerateSharePng(shareNative) {
+    if (typeof window === 'undefined' || isGeneratingPng) {
+      return
+    }
+
+    setIsGeneratingPng(true)
+
+    try {
+      const dataUrl = createSharePngDataUrl(appState, leaderboard, playerLookup)
+      setSharePngPreviewUrl(dataUrl)
+
+      if (!dataUrl) {
+        setStatusMessage('Unable to generate PNG right now.')
+        return
+      }
+
+      const fileName = `americano-match-${new Date().toISOString().slice(0, 10)}.png`
+
+      if (shareNative && navigator.share) {
+        const imageFile = await dataUrlToFile(dataUrl, fileName)
+
+        if (navigator.canShare?.({ files: [imageFile] })) {
+          await navigator.share({
+            files: [imageFile],
+            title: 'Padel Americano Matchmaker',
+            text: 'Session snapshot',
+          })
+          setStatusMessage('PNG shared successfully.')
+          return
+        }
+      }
+
+      triggerDownload(dataUrl, fileName)
+      setStatusMessage('PNG downloaded. Share it on social media.')
+    } catch {
+      setStatusMessage('Could not share PNG. Try download and post manually.')
+    } finally {
+      setIsGeneratingPng(false)
+    }
   }
 
   function handleCreateNewMatchFromShare() {
@@ -782,76 +1054,78 @@ function App() {
       <p className="status-banner">{statusMessage}</p>
 
       <main className="dashboard-grid">
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p className="section-tag">Setup</p>
-              <h2>Players & courts</h2>
-            </div>
-            <span className="hint-pill">Auto-saves locally</span>
-          </div>
-
-          <form className="player-form" onSubmit={handleAddPlayer}>
-            <div className="input-stack input-stack-wide">
-              <label htmlFor="playerName">Player name</label>
-              <input
-                id="playerName"
-                className="field"
-                type="text"
-                value={playerName}
-                onChange={(event) => setPlayerName(event.target.value)}
-                placeholder="e.g. Ihsan"
-                disabled={isSharedReadOnly}
-              />
+        {!isSharedReadOnly ? (
+          <section className="panel">
+            <div className="section-heading">
+              <div>
+                <p className="section-tag">Setup</p>
+                <h2>Players & courts</h2>
+              </div>
+              <span className="hint-pill">Auto-saves locally</span>
             </div>
 
-            <div className="input-stack">
-              <label htmlFor="courtCount">Courts</label>
-              <input
-                id="courtCount"
-                className="field"
-                type="number"
-                min="1"
-                max="12"
-                value={courtCount}
-                onChange={(event) => handleCourtCountChange(event.target.value)}
-                disabled={isSharedReadOnly}
-              />
+            <form className="player-form" onSubmit={handleAddPlayer}>
+              <div className="input-stack input-stack-wide">
+                <label htmlFor="playerName">Player name</label>
+                <input
+                  id="playerName"
+                  className="field"
+                  type="text"
+                  value={playerName}
+                  onChange={(event) => setPlayerName(event.target.value)}
+                  placeholder="e.g. Ihsan"
+                  disabled={isSharedReadOnly}
+                />
+              </div>
+
+              <div className="input-stack">
+                <label htmlFor="courtCount">Courts</label>
+                <input
+                  id="courtCount"
+                  className="field"
+                  type="number"
+                  min="1"
+                  max="12"
+                  value={courtCount}
+                  onChange={(event) => handleCourtCountChange(event.target.value)}
+                  disabled={isSharedReadOnly}
+                />
+              </div>
+
+              <button className="primary-button" type="submit" disabled={isSharedReadOnly}>
+                Add player
+              </button>
+            </form>
+
+            <div className="action-row">
+              <button className="primary-button" type="button" onClick={handleGenerateRound} disabled={isSharedReadOnly}>
+                Generate match
+              </button>
+              <button className="ghost-button" type="button" onClick={handleResetTournament} disabled={isSharedReadOnly}>
+                Reset all
+              </button>
+              <button className="ghost-button share-readonly-button" type="button" onClick={handleShareReadOnly}>
+                Share read-only
+              </button>
             </div>
 
-            <button className="primary-button" type="submit" disabled={isSharedReadOnly}>
-              Add player
-            </button>
-          </form>
+            <p className="helper-text">
+              The round builder prioritizes players with the fewest turns and the longest wait, then avoids
+              repeating partners and opponents when possible.
+            </p>
 
-          <div className="action-row">
-            <button className="primary-button" type="button" onClick={handleGenerateRound} disabled={isSharedReadOnly}>
-              Generate match
-            </button>
-            <button className="ghost-button" type="button" onClick={handleResetTournament} disabled={isSharedReadOnly}>
-              Reset all
-            </button>
-            <button className="ghost-button" type="button" onClick={handleShareReadOnly}>
-              Share read-only
-            </button>
-          </div>
-
-          <p className="helper-text">
-            The round builder prioritizes players with the fewest turns and the longest wait, then avoids
-            repeating partners and opponents when possible.
-          </p>
-
-          <div className="meta-strip">
-            <div>
-              <strong>{activeCourts || 0}</strong>
-              <span>usable courts now</span>
+            <div className="meta-strip">
+              <div>
+                <strong>{activeCourts || 0}</strong>
+                <span>usable courts now</span>
+              </div>
+              <div>
+                <strong>{benchCount}</strong>
+                <span>resting player slots</span>
+              </div>
             </div>
-            <div>
-              <strong>{benchCount}</strong>
-              <span>resting player slots</span>
-            </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         <section className="panel">
           <div className="section-heading">
@@ -859,37 +1133,42 @@ function App() {
               <p className="section-tag">Roster</p>
               <h2>Ready to play</h2>
             </div>
+            <button className="panel-toggle" type="button" onClick={() => toggleSection('roster')}>
+              {sectionOpen.roster ? 'Collapse' : 'Expand'}
+            </button>
           </div>
 
-          {players.length === 0 ? (
-            <div className="empty-state compact">
-              <p>Add at least 4 players to begin scheduling.</p>
-            </div>
-          ) : (
-            <div className="roster-list">
-              {players.map((player) => (
-                <div className="player-chip" key={player.id}>
-                  <div>
-                    <strong>{player.name}</strong>
-                    <span>
-                      {fairness[player.id]?.assigned ?? 0} turns · {fairness[player.id]?.rests ?? 0} rests
-                    </span>
-                  </div>
+          {sectionOpen.roster ? (
+            players.length === 0 ? (
+              <div className="empty-state compact">
+                <p>Add at least 4 players to begin scheduling.</p>
+              </div>
+            ) : (
+              <div className="roster-list">
+                {players.map((player) => (
+                  <div className="player-chip" key={player.id}>
+                    <div>
+                      <strong>{player.name}</strong>
+                      <span>
+                        {fairness[player.id]?.assigned ?? 0} turns · {fairness[player.id]?.rests ?? 0} rests
+                      </span>
+                    </div>
 
-                  {rounds.length === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePlayer(player.id)}
-                      aria-label={`Remove ${player.name}`}
-                      disabled={isSharedReadOnly}
-                    >
-                      ×
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
+                    {rounds.length === 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePlayer(player.id)}
+                        aria-label={`Remove ${player.name}`}
+                        disabled={isSharedReadOnly}
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )
+          ) : null}
         </section>
 
         <section className="panel panel-wide">
@@ -898,93 +1177,106 @@ function App() {
               <p className="section-tag">Matches</p>
               <h2>Current & previous rounds</h2>
             </div>
+            <button className="panel-toggle" type="button" onClick={() => toggleSection('matches')}>
+              {sectionOpen.matches ? 'Collapse' : 'Expand'}
+            </button>
           </div>
 
-          {rounds.length === 0 ? (
-            <div className="empty-state">
-              <p>Your generated rounds will appear here with score inputs for each court.</p>
-            </div>
-          ) : (
-            <div className="round-list">
-              {[...rounds].reverse().map((round) => {
-                const roundComplete = round.matches.every((match) => isScoreComplete(match))
+          {sectionOpen.matches ? (
+            rounds.length === 0 ? (
+              <div className="empty-state">
+                <p>Your generated rounds will appear here with score inputs for each court.</p>
+              </div>
+            ) : (
+              <div className="round-list">
+                {[...rounds].reverse().map((round) => {
+                  const roundComplete = round.matches.every((match) => isScoreComplete(match))
+                  const isRoundOpen = roundOpenById[round.id] ?? !isSharedReadOnly
 
-                return (
-                  <article className="round-card" key={round.id}>
-                    <div className="round-head">
-                      <div>
-                        <h3>{round.label}</h3>
-                        <p>{formatStamp(round.createdAt)}</p>
-                      </div>
-                      <span className={`badge ${roundComplete ? 'badge-complete' : 'badge-pending'}`}>
-                        {roundComplete ? 'Complete' : 'Pending scores'}
-                      </span>
-                    </div>
-
-                    {round.resting?.length ? (
-                      <p className="bench-note">
-                        Resting this round:{' '}
-                        {round.resting.map((playerId) => playerLookup[playerId] ?? 'Guest player').join(', ')}
-                      </p>
-                    ) : null}
-
-                    <div className="match-grid">
-                      {round.matches.map((match) => (
-                        <div className="match-card" key={match.id}>
-                          <div className="match-top">
-                            <span className="court-badge">Court {match.court}</span>
-                            <span className="mini-status">{isScoreComplete(match) ? 'Saved' : 'Live entry'}</span>
-                          </div>
-
-                          <div className="team-stack">
-                            <div className="team-line">
-                              <strong>{match.teamA.map((playerId) => playerLookup[playerId] ?? 'Guest player').join(' / ')}</strong>
-                            </div>
-                            <span className="vs-pill">vs</span>
-                            <div className="team-line">
-                              <strong>{match.teamB.map((playerId) => playerLookup[playerId] ?? 'Guest player').join(' / ')}</strong>
-                            </div>
-                          </div>
-
-                          <div className="score-row">
-                            <label className="score-field">
-                              <span>Team A</span>
-                              <input
-                                className="score-input"
-                                type="text"
-                                inputMode="numeric"
-                                value={match.scoreA ?? ''}
-                                onChange={(event) =>
-                                  handleScoreChange(round.id, match.id, 'scoreA', event.target.value)
-                                }
-                                placeholder="0"
-                                disabled={isSharedReadOnly}
-                              />
-                            </label>
-
-                            <label className="score-field">
-                              <span>Team B</span>
-                              <input
-                                className="score-input"
-                                type="text"
-                                inputMode="numeric"
-                                value={match.scoreB ?? ''}
-                                onChange={(event) =>
-                                  handleScoreChange(round.id, match.id, 'scoreB', event.target.value)
-                                }
-                                placeholder="0"
-                                disabled={isSharedReadOnly}
-                              />
-                            </label>
-                          </div>
+                  return (
+                    <article className="round-card" key={round.id}>
+                      <button className="round-head round-head-toggle" type="button" onClick={() => toggleRound(round.id)}>
+                        <div>
+                          <h3>{round.label}</h3>
+                          <p>{formatStamp(round.createdAt)}</p>
                         </div>
-                      ))}
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
-          )}
+                        <div className="round-head-side">
+                          <span className={`badge ${roundComplete ? 'badge-complete' : 'badge-pending'}`}>
+                            {roundComplete ? 'Complete' : 'Pending scores'}
+                          </span>
+                          <span className="round-head-caret">{isRoundOpen ? '▾' : '▸'}</span>
+                        </div>
+                      </button>
+
+                      {isRoundOpen ? (
+                        <>
+                          {round.resting?.length ? (
+                            <p className="bench-note">
+                              Resting this round:{' '}
+                              {round.resting.map((playerId) => playerLookup[playerId] ?? 'Guest player').join(', ')}
+                            </p>
+                          ) : null}
+
+                          <div className="match-grid">
+                            {round.matches.map((match) => (
+                              <div className="match-card" key={match.id}>
+                                <div className="match-top">
+                                  <span className="court-badge">Court {match.court}</span>
+                                  <span className="mini-status">{isScoreComplete(match) ? 'Saved' : 'Live entry'}</span>
+                                </div>
+
+                                <div className="team-stack">
+                                  <div className="team-line">
+                                    <strong>{match.teamA.map((playerId) => playerLookup[playerId] ?? 'Guest player').join(' / ')}</strong>
+                                  </div>
+                                  <span className="vs-pill">vs</span>
+                                  <div className="team-line">
+                                    <strong>{match.teamB.map((playerId) => playerLookup[playerId] ?? 'Guest player').join(' / ')}</strong>
+                                  </div>
+                                </div>
+
+                                <div className="score-row">
+                                  <label className="score-field">
+                                    <span>Team A</span>
+                                    <input
+                                      className="score-input"
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={match.scoreA ?? ''}
+                                      onChange={(event) =>
+                                        handleScoreChange(round.id, match.id, 'scoreA', event.target.value)
+                                      }
+                                      placeholder="0"
+                                      disabled={isSharedReadOnly}
+                                    />
+                                  </label>
+
+                                  <label className="score-field">
+                                    <span>Team B</span>
+                                    <input
+                                      className="score-input"
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={match.scoreB ?? ''}
+                                      onChange={(event) =>
+                                        handleScoreChange(round.id, match.id, 'scoreB', event.target.value)
+                                      }
+                                      placeholder="0"
+                                      disabled={isSharedReadOnly}
+                                    />
+                                  </label>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            )
+          ) : null}
         </section>
 
         <section className="panel panel-wide">
@@ -993,52 +1285,60 @@ function App() {
               <p className="section-tag">Leaderboard</p>
               <h2>Live standings</h2>
             </div>
+            <button className="panel-toggle" type="button" onClick={() => toggleSection('leaderboard')}>
+              {sectionOpen.leaderboard ? 'Collapse' : 'Expand'}
+            </button>
           </div>
 
-          {leaderboard.length === 0 || leaderboard.every((player) => player.played === 0) ? (
-            <div className="empty-state compact">
-              <p>Enter scores to populate the leaderboard.</p>
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="leaderboard-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Player</th>
-                    <th>Played</th>
-                    <th>Wins</th>
-                    <th>Draws</th>
-                    <th>For</th>
-                    <th>Against</th>
-                    <th>Diff</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaderboard.map((player, index) => (
-                    <tr className={index === 0 ? 'leader-row-top' : ''} key={player.id}>
-                      <td>
-                        <span className={`rank-pill rank-pill-${Math.min(index + 1, 4)}`}>{index + 1}</span>
-                      </td>
-                      <td>{player.name}</td>
-                      <td>{player.played}</td>
-                      <td>{player.wins}</td>
-                      <td>{player.draws}</td>
-                      <td>{player.pointsFor}</td>
-                      <td>{player.pointsAgainst}</td>
-                      <td>{player.netPoints > 0 ? `+${player.netPoints}` : player.netPoints}</td>
+          {sectionOpen.leaderboard ? (
+            leaderboard.length === 0 || leaderboard.every((player) => player.played === 0) ? (
+              <div className="empty-state compact">
+                <p>Enter scores to populate the leaderboard.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="leaderboard-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Player</th>
+                      <th>Played</th>
+                      <th>Wins</th>
+                      <th>Draws</th>
+                      <th>For</th>
+                      <th>Against</th>
+                      <th>Diff</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((player, index) => (
+                      <tr className={index === 0 ? 'leader-row-top' : ''} key={player.id}>
+                        <td>
+                          <span className={`rank-pill rank-pill-${Math.min(index + 1, 4)}`}>{index + 1}</span>
+                        </td>
+                        <td>{player.name}</td>
+                        <td>{player.played}</td>
+                        <td>{player.wins}</td>
+                        <td>{player.draws}</td>
+                        <td>{player.pointsFor}</td>
+                        <td>{player.pointsAgainst}</td>
+                        <td>{player.netPoints > 0 ? `+${player.netPoints}` : player.netPoints}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          ) : null}
         </section>
 
         {isSharedReadOnly ? (
           <div className="readonly-sticky-action readonly-sticky-action-grid">
             <button className="primary-button" type="button" onClick={handleCreateNewMatchFromShare}>
               Create new match
+            </button>
+            <button className="ghost-button share-readonly-button" type="button" onClick={handleShareReadOnly}>
+              Share read-only
             </button>
           </div>
         ) : null}
@@ -1056,11 +1356,28 @@ function App() {
             <h3>Share read-only URL</h3>
             <p>URL stays here until close popup. Copy again anytime.</p>
             <input className="field share-url-field" type="text" value={sharePopupUrl} readOnly />
+            {sharePngPreviewUrl ? (
+              <div className="share-preview-wrap">
+                <img className="share-preview-image" src={sharePngPreviewUrl} alt="Leaderboard story preview" />
+              </div>
+            ) : null}
             <div className="share-modal-actions">
-              <button className="primary-button" type="button" onClick={handleCopyShareUrlAgain}>
+              <button
+                className={`primary-button ${isCopySuccess ? 'copy-success-feedback' : ''}`}
+                type="button"
+                onClick={handleCopyShareUrlAgain}
+              >
                 Copy again
               </button>
-              <button className="ghost-button" type="button" onClick={handleCloseSharePopup}>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => handleGenerateSharePng(false)}
+                disabled={isGeneratingPng}
+              >
+                Download PNG
+              </button>
+              <button className="ghost-button share-close-button" type="button" onClick={handleCloseSharePopup}>
                 Close
               </button>
             </div>
