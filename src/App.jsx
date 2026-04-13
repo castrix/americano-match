@@ -601,7 +601,7 @@ function createSharePngDataUrl(state, leaderboard, playerLookup) {
   context.font = '800 66px Inter, Segoe UI, sans-serif'
   context.fillText('LEADERBOARD', 88, 192)
   context.font = '700 38px Inter, Segoe UI, sans-serif'
-  context.fillText('Story Snapshot', 88, 242)
+  context.fillText('Snapshot', 88, 242)
 
   const totalMatches = state.rounds.reduce((sum, round) => sum + round.matches.length, 0)
   const completedMatches = state.rounds.reduce(
