@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string'
 import './App.css'
 
 const STORAGE_KEY = 'americano-match-state-v1'
 const SHARE_KEY = 'share'
 const SHARE_CIPHER_KEY = 'americano-share-v1'
+const SHARE_STATE_VERSION = 2
 const APP_PUBLIC_URL = 'https://castrix.github.io/americano-match/'
 const DEFAULT_STATE = {
   players: [],
@@ -88,13 +90,111 @@ function xorCipher(bytes, keyBytes) {
   return bytes.map((byte, index) => byte ^ keyBytes[index % keyBytes.length])
 }
 
+function serializeStateForShare(state) {
+  const playerIdToIndex = Object.fromEntries(state.players.map((player, index) => [player.id, index]))
+
+  const compactRounds = state.rounds.map((round) =>
+    round.matches.map((match) => {
+      const teamA = match.teamA.map((playerId) => playerIdToIndex[playerId]).filter(Number.isInteger)
+      const teamB = match.teamB.map((playerId) => playerIdToIndex[playerId]).filter(Number.isInteger)
+
+      return [
+        Math.max(1, Number(match.court) || 1),
+        teamA[0] ?? -1,
+        teamA[1] ?? -1,
+        teamB[0] ?? -1,
+        teamB[1] ?? -1,
+        match.scoreA === '' ? null : Math.max(0, Number(match.scoreA) || 0),
+        match.scoreB === '' ? null : Math.max(0, Number(match.scoreB) || 0),
+      ]
+    }),
+  )
+
+  return {
+    v: SHARE_STATE_VERSION,
+    p: state.players.map((player) => player.name),
+    c: Math.max(1, Number(state.courtCount) || 1),
+    r: compactRounds,
+  }
+}
+
+function deserializeSharedState(candidate) {
+  if (!candidate || typeof candidate !== 'object') {
+    return null
+  }
+
+  if (Number(candidate.v) !== SHARE_STATE_VERSION || !Array.isArray(candidate.p) || !Array.isArray(candidate.r)) {
+    return null
+  }
+
+  const players = candidate.p
+    .filter((name) => typeof name === 'string')
+    .map((name) => ({ id: createId(), name: name.trim() }))
+    .filter((player) => player.name)
+
+  const playerIds = players.map((player) => player.id)
+
+  const rounds = candidate.r
+    .filter((roundMatches) => Array.isArray(roundMatches))
+    .map((roundMatches, roundIndex) => {
+      const matches = roundMatches
+        .filter((entry) => Array.isArray(entry) && entry.length >= 7)
+        .map((entry, matchIndex) => {
+          const [courtRaw, a0, a1, b0, b1, scoreARaw, scoreBRaw] = entry
+          const teamA = [a0, a1]
+            .filter((indexValue) => Number.isInteger(indexValue) && indexValue >= 0 && indexValue < playerIds.length)
+            .map((indexValue) => playerIds[indexValue])
+          const teamB = [b0, b1]
+            .filter((indexValue) => Number.isInteger(indexValue) && indexValue >= 0 && indexValue < playerIds.length)
+            .map((indexValue) => playerIds[indexValue])
+
+          const nextMatch = {
+            id: createId(),
+            court: Math.max(1, Number(courtRaw) || matchIndex + 1),
+            teamA,
+            teamB,
+            scoreA: Number.isFinite(scoreARaw) ? String(Math.max(0, Number(scoreARaw))) : '',
+            scoreB: Number.isFinite(scoreBRaw) ? String(Math.max(0, Number(scoreBRaw))) : '',
+          }
+
+          return {
+            ...nextMatch,
+            completed: isScoreComplete(nextMatch),
+          }
+        })
+
+      const playingIds = new Set(matches.flatMap((match) => [...match.teamA, ...match.teamB]))
+      const resting = playerIds.filter((playerId) => !playingIds.has(playerId))
+
+      return {
+        id: createId(),
+        label: `Round ${roundIndex + 1}`,
+        createdAt: new Date().toISOString(),
+        resting,
+        matches,
+      }
+    })
+
+  return {
+    players,
+    courtCount: Math.max(1, Number(candidate.c) || 1),
+    rounds,
+  }
+}
+
 function encodeShareState(state) {
   if (typeof window === 'undefined') {
     return ''
   }
 
   const encoder = new TextEncoder()
-  const jsonBytes = encoder.encode(JSON.stringify(state))
+  const compressed = compressToEncodedURIComponent(JSON.stringify(serializeStateForShare(state)))
+
+  if (!compressed) {
+    return ''
+  }
+
+  const jsonBytes = encoder.encode(compressed)
   const keyBytes = encoder.encode(SHARE_CIPHER_KEY)
   const cipherBytes = xorCipher(jsonBytes, keyBytes)
 
@@ -111,7 +211,22 @@ function decodeShareState(payload) {
     const keyBytes = new TextEncoder().encode(SHARE_CIPHER_KEY)
     const cipherBytes = fromBase64Url(payload)
     const plainBytes = xorCipher(cipherBytes, keyBytes)
-    const parsedState = JSON.parse(decoder.decode(plainBytes))
+    const decodedPayload = decoder.decode(plainBytes)
+
+    const decompressed = decompressFromEncodedURIComponent(decodedPayload)
+    if (decompressed) {
+      const parsedState = JSON.parse(decompressed)
+
+      const compactState = deserializeSharedState(parsedState)
+      if (compactState) {
+        return normalizeState(compactState)
+      }
+
+      return normalizeState(parsedState)
+    }
+
+    // Backward compatibility for links created before compression rollout.
+    const parsedState = JSON.parse(decodedPayload)
 
     return normalizeState(parsedState)
   } catch {
@@ -278,7 +393,6 @@ function buildLeaderboard(players, rounds) {
         name: player.name,
         played: 0,
         wins: 0,
-        draws: 0,
         losses: 0,
         pointsFor: 0,
         pointsAgainst: 0,
@@ -306,7 +420,6 @@ function buildLeaderboard(players, rounds) {
               name: 'Player',
               played: 0,
               wins: 0,
-              draws: 0,
               losses: 0,
               pointsFor: 0,
               pointsAgainst: 0,
@@ -323,10 +436,8 @@ function buildLeaderboard(players, rounds) {
 
           if (teamScore > otherScore) {
             stats[playerId].wins += 1
-          } else if (teamScore < otherScore) {
-            stats[playerId].losses += 1
           } else {
-            stats[playerId].draws += 1
+            stats[playerId].losses += 1
           }
         })
       }
@@ -368,7 +479,7 @@ function getAmericanoStrengthRating(player) {
   const averagePointsFor = player.pointsFor / player.played
   const averagePointsAgainst = player.pointsAgainst / player.played
   const averageNet = averagePointsFor - averagePointsAgainst
-  const winRate = (player.wins + player.draws * 0.5) / player.played
+  const winRate = player.wins / player.played
   const sampleWeight = Math.min(player.played, 4) / 4
 
   return (averagePointsFor * 0.6 + averageNet * 1.4 + winRate * 8) * sampleWeight
@@ -787,7 +898,7 @@ function createSharePngDataUrl(state, leaderboard, playerLookup) {
 
     context.fillStyle = mutedColor
     context.font = isTopThree ? '600 24px Inter, Segoe UI, sans-serif' : '600 18px Inter, Segoe UI, sans-serif'
-    context.fillText(`W ${player.wins} · D ${player.draws} · Pts ${player.pointsFor}`, 206, y + (isTopThree ? 78 : 54))
+    context.fillText(`W ${player.wins} · Pts ${player.pointsFor}`, 206, y + (isTopThree ? 78 : 54))
 
     context.fillStyle = rank === 1 ? primaryColor : textColor
     context.font = isTopThree ? '800 32px Inter, Segoe UI, sans-serif' : '800 24px Inter, Segoe UI, sans-serif'
@@ -1565,7 +1676,6 @@ function App() {
                       <th>Player</th>
                       <th>Played</th>
                       <th>Wins</th>
-                      <th>Draws</th>
                       <th>For</th>
                       <th>Against</th>
                       <th>Diff</th>
@@ -1580,7 +1690,6 @@ function App() {
                         <td>{player.name}</td>
                         <td>{player.played}</td>
                         <td>{player.wins}</td>
-                        <td>{player.draws}</td>
                         <td>{player.pointsFor}</td>
                         <td>{player.pointsAgainst}</td>
                         <td>{player.netPoints > 0 ? `+${player.netPoints}` : player.netPoints}</td>
