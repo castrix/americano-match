@@ -1,0 +1,90 @@
+:root {
+  font-family: Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: #eff6ff;
+  background:
+    radial-gradient(circle at top left, rgba(46, 230, 166, 0.16), transparent 0, transparent 36%),
+    radial-gradient(circle at bottom right, rgba(255, 184, 77, 0.12), transparent 0, transparent 32%),
+    #06111a;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --panel: rgba(9, 19, 31, 0.82);
+  --panel-strong: rgba(13, 26, 40, 0.96);
+  --panel-border: rgba(148, 163, 184, 0.18);
+  --text: #eff6ff;
+  --soft: #dbeafe;
+  --muted: #9db0c4;
+  --primary: #2ee6a6;
+  --primary-dark: #082018;
+  --shadow: 0 24px 48px rgba(0, 0, 0, 0.26);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(46, 230, 166, 0.16), transparent 0, transparent 36%),
+    radial-gradient(circle at bottom right, rgba(255, 184, 77, 0.12), transparent 0, transparent 32%),
+    #06111a;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--text);
+}
+
+h1 {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+h2 {
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(46, 230, 166, 0.3);
+  color: #fff;
+}
