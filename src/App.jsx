@@ -189,6 +189,30 @@ function isScoreComplete(match) {
   return match.scoreA !== '' && match.scoreB !== '' && Number.isFinite(scoreA) && Number.isFinite(scoreB)
 }
 
+function toMatchScore(value) {
+  const nextValue = Number(value)
+  return Number.isFinite(nextValue) ? nextValue : 0
+}
+
+function getServeWindowByTurn(turnNumber) {
+  if (turnNumber <= 20) {
+    const blockStart = Math.floor((turnNumber - 1) / 5) * 5 + 1
+    const blockEnd = blockStart + 4
+    return `Serve block ${blockStart}-${blockEnd}`
+  }
+
+  return 'Turn 21 decider'
+}
+
+function getServePositionByTurn(turnNumber) {
+  const positionInBlock = ((turnNumber - 1) % 5) + 1
+  return positionInBlock % 2 === 1 ? 'Right' : 'Left'
+}
+
+function getMatchTurnsPassed(match) {
+  return toMatchScore(match.scoreA) + toMatchScore(match.scoreB)
+}
+
 function bumpCount(bucket, key) {
   bucket[key] = (bucket[key] ?? 0) + 1
 }
@@ -259,6 +283,8 @@ function buildLeaderboard(players, rounds) {
         pointsFor: 0,
         pointsAgainst: 0,
         netPoints: 0,
+        avgPointsFor: 0,
+        avgNetPoints: 0,
       },
     ]),
   )
@@ -285,6 +311,8 @@ function buildLeaderboard(players, rounds) {
               pointsFor: 0,
               pointsAgainst: 0,
               netPoints: 0,
+              avgPointsFor: 0,
+              avgNetPoints: 0,
             }
           }
 
@@ -308,6 +336,13 @@ function buildLeaderboard(players, rounds) {
     })
   })
 
+  Object.values(stats).forEach((player) => {
+    if (player.played > 0) {
+      player.avgPointsFor = player.pointsFor / player.played
+      player.avgNetPoints = player.netPoints / player.played
+    }
+  })
+
   return Object.values(stats).sort((playerA, playerB) => {
     if (playerB.pointsFor !== playerA.pointsFor) {
       return playerB.pointsFor - playerA.pointsFor
@@ -315,11 +350,28 @@ function buildLeaderboard(players, rounds) {
     if (playerB.netPoints !== playerA.netPoints) {
       return playerB.netPoints - playerA.netPoints
     }
+    if (playerB.played !== playerA.played) {
+      return playerB.played - playerA.played
+    }
     if (playerB.wins !== playerA.wins) {
       return playerB.wins - playerA.wins
     }
     return playerA.name.localeCompare(playerB.name)
   })
+}
+
+function getAmericanoStrengthRating(player) {
+  if (!player || player.played <= 0) {
+    return 0
+  }
+
+  const averagePointsFor = player.pointsFor / player.played
+  const averagePointsAgainst = player.pointsAgainst / player.played
+  const averageNet = averagePointsFor - averagePointsAgainst
+  const winRate = (player.wins + player.draws * 0.5) / player.played
+  const sampleWeight = Math.min(player.played, 4) / 4
+
+  return (averagePointsFor * 0.6 + averageNet * 1.4 + winRate * 8) * sampleWeight
 }
 
 function getCombinations(items, size) {
@@ -351,10 +403,94 @@ function getRelationCount(fairness, sourceId, relationKey, targetId) {
   return fairness[sourceId]?.[relationKey]?.[targetId] ?? 0
 }
 
+function scoreParticipantSelection(playerIds, fairness, roundIndex) {
+  const assignedCounts = playerIds.map((playerId) => fairness[playerId]?.assigned ?? 0)
+  const minAssigned = Math.min(...assignedCounts)
+  const maxAssigned = Math.max(...assignedCounts)
+  const assignmentSpreadPenalty = (maxAssigned - minAssigned) * 60
+
+  const assignmentLoadPenalty = playerIds.reduce((sum, playerId) => {
+    const assigned = fairness[playerId]?.assigned ?? 0
+    return sum + Math.max(0, assigned - minAssigned) * 24
+  }, 0)
+
+  const recentRoundPenalty = playerIds.reduce((sum, playerId) => {
+    const lastRound = fairness[playerId]?.lastRound ?? -1
+    return sum + (lastRound === roundIndex - 1 ? 14 : 0)
+  }, 0)
+
+  let repeatedInteractionPenalty = 0
+
+  for (let left = 0; left < playerIds.length; left += 1) {
+    for (let right = left + 1; right < playerIds.length; right += 1) {
+      const playerAId = playerIds[left]
+      const playerBId = playerIds[right]
+      const priorInteractions =
+        getRelationCount(fairness, playerAId, 'partnerCounts', playerBId) +
+        getRelationCount(fairness, playerAId, 'opponentCounts', playerBId)
+
+      repeatedInteractionPenalty += priorInteractions * 18
+    }
+  }
+
+  return assignmentSpreadPenalty + assignmentLoadPenalty + recentRoundPenalty + repeatedInteractionPenalty
+}
+
+function chooseRoundParticipants(players, fairness, slotCount, roundIndex) {
+  if (slotCount >= players.length) {
+    return players.map((player) => player.id)
+  }
+
+  const orderedPlayers = [...players].sort((playerA, playerB) => {
+    const playerAFairness = fairness[playerA.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
+    const playerBFairness = fairness[playerB.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
+
+    if (playerAFairness.assigned !== playerBFairness.assigned) {
+      return playerAFairness.assigned - playerBFairness.assigned
+    }
+    if (playerAFairness.lastRound !== playerBFairness.lastRound) {
+      return playerAFairness.lastRound - playerBFairness.lastRound
+    }
+    if (playerAFairness.rests !== playerBFairness.rests) {
+      return playerBFairness.rests - playerAFairness.rests
+    }
+    return playerA.name.localeCompare(playerB.name)
+  })
+
+  const minAssigned = Math.min(...orderedPlayers.map((player) => fairness[player.id]?.assigned ?? 0))
+  let candidatePlayers = orderedPlayers.filter((player) => (fairness[player.id]?.assigned ?? 0) <= minAssigned + 1)
+
+  if (candidatePlayers.length < slotCount) {
+    candidatePlayers = orderedPlayers
+  }
+
+  const poolSize = Math.min(candidatePlayers.length, Math.max(slotCount + 4, 12))
+  const candidateIds = candidatePlayers.slice(0, poolSize).map((player) => player.id)
+  const selectionOptions = getCombinations(candidateIds, slotCount)
+
+  if (selectionOptions.length === 0) {
+    return orderedPlayers.slice(0, slotCount).map((player) => player.id)
+  }
+
+  let bestSelection = null
+
+  selectionOptions.forEach((selection) => {
+    const score = scoreParticipantSelection(selection, fairness, roundIndex)
+
+    if (!bestSelection || score < bestSelection.score) {
+      bestSelection = { selection, score }
+    }
+  })
+
+  return bestSelection ? bestSelection.selection : orderedPlayers.slice(0, slotCount).map((player) => player.id)
+}
+
 function scoreMatchup(teamA, teamB, fairness, ratingMap) {
+  const teamARepeatCount = getRelationCount(fairness, teamA[0], 'partnerCounts', teamA[1])
+  const teamBRepeatCount = getRelationCount(fairness, teamB[0], 'partnerCounts', teamB[1])
   const partnerPenalty =
-    getRelationCount(fairness, teamA[0], 'partnerCounts', teamA[1]) * 12 +
-    getRelationCount(fairness, teamB[0], 'partnerCounts', teamB[1]) * 12
+    (teamARepeatCount > 0 ? 90 + teamARepeatCount * 55 : 0) +
+    (teamBRepeatCount > 0 ? 90 + teamBRepeatCount * 55 : 0)
 
   const opponentPenalty = teamA.reduce(
     (sum, playerId) =>
@@ -382,28 +518,32 @@ function chooseBestMatch(remainingIds, fairness, ratingMap) {
     return null
   }
 
-  const anchor = remainingIds[0]
-  const trioOptions = getCombinations(remainingIds.slice(1), 3)
+  const anchorOptions = remainingIds.slice(0, Math.min(remainingIds.length - 3, 4))
   let bestChoice = null
 
-  trioOptions.forEach((trio) => {
-    const group = [anchor, ...trio]
-    const splitOptions = [
-      { teamA: [group[0], group[1]], teamB: [group[2], group[3]] },
-      { teamA: [group[0], group[2]], teamB: [group[1], group[3]] },
-      { teamA: [group[0], group[3]], teamB: [group[1], group[2]] },
-    ]
+  anchorOptions.forEach((anchor) => {
+    const trioPool = remainingIds.filter((playerId) => playerId !== anchor)
+    const trioOptions = getCombinations(trioPool, 3)
 
-    splitOptions.forEach((split) => {
-      const score = scoreMatchup(split.teamA, split.teamB, fairness, ratingMap)
+    trioOptions.forEach((trio) => {
+      const group = [anchor, ...trio]
+      const splitOptions = [
+        { teamA: [group[0], group[1]], teamB: [group[2], group[3]] },
+        { teamA: [group[0], group[2]], teamB: [group[1], group[3]] },
+        { teamA: [group[0], group[3]], teamB: [group[1], group[2]] },
+      ]
 
-      if (!bestChoice || score < bestChoice.score) {
-        bestChoice = {
-          ...split,
-          group,
-          score,
+      splitOptions.forEach((split) => {
+        const score = scoreMatchup(split.teamA, split.teamB, fairness, ratingMap)
+
+        if (!bestChoice || score < bestChoice.score) {
+          bestChoice = {
+            ...split,
+            group,
+            score,
+          }
         }
-      }
+      })
     })
   })
 
@@ -418,28 +558,11 @@ function createRound(players, rounds, courtCount, leaderboard) {
   }
 
   const fairness = buildFairness(players, rounds)
-  const ratingMap = Object.fromEntries(
-    leaderboard.map((player) => [player.id, player.pointsFor + player.netPoints + player.wins * 2]),
-  )
+  const ratingMap = Object.fromEntries(leaderboard.map((player) => [player.id, getAmericanoStrengthRating(player)]))
 
-  const orderedPlayers = [...players].sort((playerA, playerB) => {
-    const playerAFairness = fairness[playerA.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
-    const playerBFairness = fairness[playerB.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
-
-    if (playerAFairness.assigned !== playerBFairness.assigned) {
-      return playerAFairness.assigned - playerBFairness.assigned
-    }
-    if (playerAFairness.lastRound !== playerBFairness.lastRound) {
-      return playerAFairness.lastRound - playerBFairness.lastRound
-    }
-    if (playerAFairness.rests !== playerBFairness.rests) {
-      return playerBFairness.rests - playerAFairness.rests
-    }
-    return playerA.name.localeCompare(playerB.name)
-  })
-
-  const selectedIds = orderedPlayers.slice(0, playableCourts * 4).map((player) => player.id)
-  const restingIds = orderedPlayers.slice(playableCourts * 4).map((player) => player.id)
+  const selectedIds = chooseRoundParticipants(players, fairness, playableCourts * 4, rounds.length)
+  const selectedIdSet = new Set(selectedIds)
+  const restingIds = players.filter((player) => !selectedIdSet.has(player.id)).map((player) => player.id)
 
   let remainingIds = [...selectedIds].sort((playerAId, playerBId) => {
     const playerAFairness = fairness[playerAId] ?? { assigned: 0, rests: 0, lastRound: -1 }
@@ -903,6 +1026,80 @@ function App() {
     }))
   }
 
+  function handleScoreIncrement(roundId, matchId, field) {
+    if (isSharedReadOnly) {
+      showReadOnlyMessage()
+      return
+    }
+
+    setAppState((currentState) => ({
+      ...currentState,
+      rounds: currentState.rounds.map((round) => {
+        if (round.id !== roundId) {
+          return round
+        }
+
+        return {
+          ...round,
+          matches: round.matches.map((match) => {
+            if (match.id !== matchId) {
+              return match
+            }
+
+            const currentScore = Math.max(0, Math.min(99, toMatchScore(match[field])))
+            const nextScore = String(Math.min(currentScore + 1, 99))
+            const updatedMatch = {
+              ...match,
+              [field]: nextScore,
+            }
+
+            return {
+              ...updatedMatch,
+              completed: isScoreComplete(updatedMatch),
+            }
+          }),
+        }
+      }),
+    }))
+  }
+
+  function handleScoreDecrement(roundId, matchId, field) {
+    if (isSharedReadOnly) {
+      showReadOnlyMessage()
+      return
+    }
+
+    setAppState((currentState) => ({
+      ...currentState,
+      rounds: currentState.rounds.map((round) => {
+        if (round.id !== roundId) {
+          return round
+        }
+
+        return {
+          ...round,
+          matches: round.matches.map((match) => {
+            if (match.id !== matchId) {
+              return match
+            }
+
+            const currentScore = Math.max(0, Math.min(99, toMatchScore(match[field])))
+            const nextScore = String(Math.max(currentScore - 1, 0))
+            const updatedMatch = {
+              ...match,
+              [field]: nextScore,
+            }
+
+            return {
+              ...updatedMatch,
+              completed: isScoreComplete(updatedMatch),
+            }
+          }),
+        }
+      }),
+    }))
+  }
+
   function handleResetTournament() {
     if (isSharedReadOnly) {
       showReadOnlyMessage()
@@ -1228,6 +1425,14 @@ function App() {
                           <div className="match-grid">
                             {round.matches.map((match) => (
                               <div className="match-card" key={match.id}>
+                                {(() => {
+                                  const turnsPassed = getMatchTurnsPassed(match)
+                                  const currentTurn = Math.max(1, Math.min(turnsPassed + 1, 21))
+                                  const serveWindow = getServeWindowByTurn(currentTurn)
+                                  const servePosition = getServePositionByTurn(currentTurn)
+
+                                  return (
+                                    <>
                                 <div className="match-top">
                                   <span className="court-badge">Court {match.court}</span>
                                   <span className="mini-status">{isScoreComplete(match) ? 'Saved' : 'Live entry'}</span>
@@ -1246,34 +1451,82 @@ function App() {
                                 <div className="score-row">
                                   <label className="score-field">
                                     <span>Team A</span>
-                                    <input
-                                      className="score-input"
-                                      type="text"
-                                      inputMode="numeric"
-                                      value={match.scoreA ?? ''}
-                                      onChange={(event) =>
-                                        handleScoreChange(round.id, match.id, 'scoreA', event.target.value)
-                                      }
-                                      placeholder="0"
-                                      disabled={isSharedReadOnly}
-                                    />
+                                    <div className="score-input-wrap">
+                                      <button
+                                        className="score-step-button score-minus-button"
+                                        type="button"
+                                        onClick={() => handleScoreDecrement(round.id, match.id, 'scoreA')}
+                                        disabled={isSharedReadOnly}
+                                        aria-label="Decrease Team A score"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        className="score-input"
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={match.scoreA ?? ''}
+                                        onChange={(event) =>
+                                          handleScoreChange(round.id, match.id, 'scoreA', event.target.value)
+                                        }
+                                        placeholder="0"
+                                        disabled={isSharedReadOnly}
+                                      />
+                                      <button
+                                        className="score-step-button score-plus-button"
+                                        type="button"
+                                        onClick={() => handleScoreIncrement(round.id, match.id, 'scoreA')}
+                                        disabled={isSharedReadOnly}
+                                        aria-label="Increase Team A score"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
                                   </label>
 
                                   <label className="score-field">
                                     <span>Team B</span>
-                                    <input
-                                      className="score-input"
-                                      type="text"
-                                      inputMode="numeric"
-                                      value={match.scoreB ?? ''}
-                                      onChange={(event) =>
-                                        handleScoreChange(round.id, match.id, 'scoreB', event.target.value)
-                                      }
-                                      placeholder="0"
-                                      disabled={isSharedReadOnly}
-                                    />
+                                    <div className="score-input-wrap">
+                                      <button
+                                        className="score-step-button score-minus-button"
+                                        type="button"
+                                        onClick={() => handleScoreDecrement(round.id, match.id, 'scoreB')}
+                                        disabled={isSharedReadOnly}
+                                        aria-label="Decrease Team B score"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        className="score-input"
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={match.scoreB ?? ''}
+                                        onChange={(event) =>
+                                          handleScoreChange(round.id, match.id, 'scoreB', event.target.value)
+                                        }
+                                        placeholder="0"
+                                        disabled={isSharedReadOnly}
+                                      />
+                                      <button
+                                        className="score-step-button score-plus-button"
+                                        type="button"
+                                        onClick={() => handleScoreIncrement(round.id, match.id, 'scoreB')}
+                                        disabled={isSharedReadOnly}
+                                        aria-label="Increase Team B score"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
                                   </label>
                                 </div>
+                                <div className="ingame-reminder">
+                                  <span className="ingame-badge">Turn {currentTurn}/21</span>
+                                  <span className="ingame-badge">{serveWindow}</span>
+                                  <span className="ingame-badge">Current serve position: {servePosition}</span>
+                                </div>
+                                    </>
+                                  )
+                                })()}
                               </div>
                             ))}
                           </div>
