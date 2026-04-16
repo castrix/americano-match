@@ -10,7 +10,7 @@ const APP_PUBLIC_URL = 'https://castrix.github.io/americano-match/'
 const GITHUB_PROFILE_URL = 'https://github.com/castrix'
 const DEFAULT_STATE = {
   players: [],
-  courtCount: 2,
+  courtCount: 1,
   rounds: [],
 }
 
@@ -1239,6 +1239,30 @@ function App() {
     }))
   }
 
+  function handleCourtCountIncrement() {
+    if (isSharedReadOnly) {
+      showReadOnlyMessage()
+      return
+    }
+
+    setAppState((currentState) => ({
+      ...currentState,
+      courtCount: Math.min(Math.max(1, Number(currentState.courtCount) || 1) + 1, 12),
+    }))
+  }
+
+  function handleCourtCountDecrement() {
+    if (isSharedReadOnly) {
+      showReadOnlyMessage()
+      return
+    }
+
+    setAppState((currentState) => ({
+      ...currentState,
+      courtCount: Math.max(Math.max(1, Number(currentState.courtCount) || 1) - 1, 1),
+    }))
+  }
+
   async function handleShareReadOnly() {
     const shareUrl = createShareUrl(appState)
 
@@ -1408,16 +1432,36 @@ function App() {
 
               <div className="input-stack">
                 <label htmlFor="courtCount">Courts</label>
-                <input
-                  id="courtCount"
-                  className="field"
-                  type="number"
-                  min="1"
-                  max="12"
-                  value={courtCount}
-                  onChange={(event) => handleCourtCountChange(event.target.value)}
-                  disabled={isSharedReadOnly}
-                />
+                <div className="field-input-wrap">
+                  <button
+                    className="field-step-button field-minus-button"
+                    type="button"
+                    onClick={handleCourtCountDecrement}
+                    disabled={isSharedReadOnly || courtCount <= 1}
+                    aria-label="Decrease court count"
+                  >
+                    -
+                  </button>
+                  <input
+                    id="courtCount"
+                    className="field field-with-steps"
+                    type="number"
+                    min="1"
+                    max="12"
+                    value={courtCount}
+                    onChange={(event) => handleCourtCountChange(event.target.value)}
+                    disabled={isSharedReadOnly}
+                  />
+                  <button
+                    className="field-step-button field-plus-button"
+                    type="button"
+                    onClick={handleCourtCountIncrement}
+                    disabled={isSharedReadOnly || courtCount >= 12}
+                    aria-label="Increase court count"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
               <button className="primary-button" type="submit" disabled={isSharedReadOnly}>

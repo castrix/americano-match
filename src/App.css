@@ -243,6 +243,17 @@
   transform: translateY(-1px);
 }
 
+.field-input-wrap,
+.score-input-wrap {
+  position: relative;
+}
+
+.field-with-steps,
+.score-input {
+  padding-left: 42px;
+  padding-right: 42px;
+}
+
 .primary-button,
 .ghost-button,
 .player-chip button {
@@ -302,7 +313,9 @@
 .score-input:disabled,
 .primary-button:disabled,
 .ghost-button:disabled,
-.player-chip button:disabled {
+.player-chip button:disabled,
+.field-step-button:disabled,
+.score-step-button:disabled {
   opacity: 0.58;
   cursor: not-allowed;
 }
@@ -558,17 +571,15 @@ table td {
   gap: 6px;
 }
 
-.score-input-wrap {
-  position: relative;
-}
-
 .score-input {
-  padding: 10px 42px 10px 42px;
+  padding-top: 10px;
+  padding-bottom: 10px;
   text-align: center;
   font-size: 1rem;
   font-weight: 700;
 }
 
+.field-step-button,
 .score-step-button {
   position: absolute;
   top: 50%;
@@ -586,27 +597,29 @@ table td {
   transition: transform 0.2s ease, filter 0.2s ease, background-color 0.2s ease;
 }
 
+.field-minus-button,
 .score-minus-button {
   left: 6px;
+  border-color: rgba(255, 107, 107, 0.36);
+  background: rgba(255, 107, 107, 0.14);
+  color: #ff9b9b;
 }
 
+.field-plus-button,
 .score-plus-button {
   right: 6px;
 }
 
+.field-step-button:hover,
 .score-step-button:hover {
   transform: translateY(calc(-50% - 1px));
   filter: brightness(1.06);
 }
 
+.field-step-button:active,
 .score-step-button:active {
   transform: translateY(-50%) scale(0.98);
   filter: brightness(0.98);
-}
-
-.score-step-button:disabled {
-  opacity: 0.58;
-  cursor: not-allowed;
 }
 
 .ingame-reminder {
@@ -695,8 +708,13 @@ table td {
   position: sticky;
   bottom: 12px;
   margin-top: 4px;
-  padding-top: 4px;
+  padding: 14px;
   z-index: 5;
+  border-radius: 20px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
 }
 
 .readonly-sticky-action-grid {
