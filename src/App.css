@@ -1004,6 +1004,26 @@ table td {
   animation: copySuccessPulse 0.55s ease;
 }
 
+@media (max-width: 699px) {
+  .share-modal-overlay {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  .share-modal {
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
+  }
+
+  .share-preview-wrap {
+    max-height: min(34dvh, 320px);
+  }
+
+  .share-preview-image {
+    height: min(34dvh, 320px);
+  }
+}
+
 @media (min-width: 700px) {
   .player-form {
     grid-template-columns: 2fr 120px auto;
