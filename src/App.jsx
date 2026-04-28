@@ -553,48 +553,33 @@ function chooseRoundParticipants(players, fairness, slotCount, roundIndex) {
     return players.map((player) => player.id)
   }
 
-  const orderedPlayers = [...players].sort((playerA, playerB) => {
-    const playerAFairness = fairness[playerA.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
-    const playerBFairness = fairness[playerB.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
+  const restSlots = players.length - slotCount
 
-    if (playerAFairness.assigned !== playerBFairness.assigned) {
-      return playerAFairness.assigned - playerBFairness.assigned
-    }
-    if (playerAFairness.lastRound !== playerBFairness.lastRound) {
-      return playerAFairness.lastRound - playerBFairness.lastRound
-    }
-    if (playerAFairness.rests !== playerBFairness.rests) {
-      return playerBFairness.rests - playerAFairness.rests
-    }
-    return playerA.name.localeCompare(playerB.name)
-  })
+  const playersToRest = [...players]
+    .sort((playerA, playerB) => {
+      const playerAFairness = fairness[playerA.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
+      const playerBFairness = fairness[playerB.id] ?? { assigned: 0, rests: 0, lastRound: -1 }
 
-  const minAssigned = Math.min(...orderedPlayers.map((player) => fairness[player.id]?.assigned ?? 0))
-  let candidatePlayers = orderedPlayers.filter((player) => (fairness[player.id]?.assigned ?? 0) <= minAssigned + 1)
+      // More-assigned players should be benched first.
+      if (playerAFairness.assigned !== playerBFairness.assigned) {
+        return playerBFairness.assigned - playerAFairness.assigned
+      }
+      // If assignment load ties, bench those who played most recently.
+      if (playerAFairness.lastRound !== playerBFairness.lastRound) {
+        return playerBFairness.lastRound - playerAFairness.lastRound
+      }
+      // Preserve rotation by benching players with fewer past rests first.
+      if (playerAFairness.rests !== playerBFairness.rests) {
+        return playerAFairness.rests - playerBFairness.rests
+      }
 
-  if (candidatePlayers.length < slotCount) {
-    candidatePlayers = orderedPlayers
-  }
+      return playerA.name.localeCompare(playerB.name)
+    })
+    .slice(0, restSlots)
 
-  const poolSize = Math.min(candidatePlayers.length, Math.max(slotCount + 4, 12))
-  const candidateIds = candidatePlayers.slice(0, poolSize).map((player) => player.id)
-  const selectionOptions = getCombinations(candidateIds, slotCount)
+  const restingIdSet = new Set(playersToRest.map((player) => player.id))
 
-  if (selectionOptions.length === 0) {
-    return orderedPlayers.slice(0, slotCount).map((player) => player.id)
-  }
-
-  let bestSelection = null
-
-  selectionOptions.forEach((selection) => {
-    const score = scoreParticipantSelection(selection, fairness, roundIndex)
-
-    if (!bestSelection || score < bestSelection.score) {
-      bestSelection = { selection, score }
-    }
-  })
-
-  return bestSelection ? bestSelection.selection : orderedPlayers.slice(0, slotCount).map((player) => player.id)
+  return players.filter((player) => !restingIdSet.has(player.id)).map((player) => player.id)
 }
 
 function scoreMatchup(teamA, teamB, fairness, ratingMap) {
