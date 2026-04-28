@@ -1579,7 +1579,7 @@ function App() {
                     aria-pressed={skillLevel === level}
                   >
                     <span>{level}</span>
-                    <small>{level === 1 ? 'Casual' : level === 5 ? 'Strong' : 'Level'}</small>
+                    <small>{level === 1 ? 'Casual' : level === 5 ? 'Pro' : ''}</small>
                   </button>
                 ))}
               </div>
