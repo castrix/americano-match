@@ -898,9 +898,9 @@ function App() {
   })
   const [appState, setAppState] = useState(initialState)
   const [playerName, setPlayerName] = useState('')
-  const [sharePopupUrl, setSharePopupUrl] = useState('')
+  const [sharePopupUrl, setSharePopupUrl] = useState(() => (isSharedReadOnly ? createShareUrl(initialState) : ''))
   const [sharePngPreviewUrl, setSharePngPreviewUrl] = useState('')
-  const [isSharePopupOpen, setIsSharePopupOpen] = useState(false)
+  const [isSharePopupOpen, setIsSharePopupOpen] = useState(isSharedReadOnly)
   const [isGeneratingPng, setIsGeneratingPng] = useState(false)
   const [isCopySuccess, setIsCopySuccess] = useState(false)
   const [sectionOpen, setSectionOpen] = useState(() => ({
@@ -1770,10 +1770,10 @@ function App() {
             className="share-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="Share read-only URL"
+            aria-label="Share URL copied!"
             onClick={(event) => event.stopPropagation()}
           >
-            <h3>Share read-only URL</h3>
+            <h3 style={{color:"#89ffd8"}}>{isSharedReadOnly ? 'Read-only session' : 'Share URL copied!'}</h3>
             <p>URL stays here until close popup. Copy again anytime.</p>
             <input className="field share-url-field" type="text" value={sharePopupUrl} readOnly />
             {sharePngPreviewUrl ? (
@@ -1790,7 +1790,7 @@ function App() {
                 Copy again
               </button>
               <button
-                className="ghost-button"
+                className="ghost-button ghost-button-purple"
                 type="button"
                 onClick={() => handleGenerateSharePng(false)}
                 disabled={isGeneratingPng}

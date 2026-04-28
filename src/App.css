@@ -344,6 +344,21 @@
   filter: hue-rotate(88deg) saturate(1.08) brightness(0.98);
 }
 
+.ghost-button.ghost-button-purple {
+  border-color: rgba(168, 85, 247, 0.5);
+  color: #c084fc;
+}
+
+.ghost-button.ghost-button-purple:hover {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.8);
+  color: #e9d5ff;
+}
+
+.ghost-button.ghost-button-purple:active {
+  background: rgba(168, 85, 247, 0.2);
+}
+
 .field:disabled,
 .score-input:disabled,
 .primary-button:disabled,
@@ -812,7 +827,12 @@ table td {
 }
 
 .share-preview-image {
-  height: auto;
+  width: auto;
+  max-width: none;
+  height: min(40vh, 460px);
+  max-height: 100%;
+  object-fit: contain;
+  flex: 0 0 auto;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -825,6 +845,22 @@ table td {
 .share-close-button {
   width: 100%;
   grid-column: 1 / -1;
+}
+
+.ghost-button.share-close-button {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #fecaca;
+}
+
+.ghost-button.share-close-button:hover {
+  background: rgba(239, 68, 68, 0.24);
+  border-color: rgba(239, 68, 68, 0.82);
+  color: #ffe4e6;
+}
+
+.ghost-button.share-close-button:active {
+  background: rgba(239, 68, 68, 0.3);
 }
 
 @keyframes copySuccessPulse {
