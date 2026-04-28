@@ -1508,7 +1508,8 @@ function App() {
                   <input
                     id="courtCount"
                     className="field field-with-steps"
-                    type="numeric"
+                    type="text"
+                    inputMode='numeric'
                     min="1"
                     max="12"
                     value={courtCount}
