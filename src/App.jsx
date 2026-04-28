@@ -1867,7 +1867,7 @@ function App() {
       </main>
 
       {isSharePopupOpen ? (
-        <div className="share-modal-overlay" role="presentation" onClick={handleCloseSharePopup}>
+        <div className="share-modal-overlay" role="presentation">
           <div
             className="share-modal"
             role="dialog"
