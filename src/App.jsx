@@ -1592,11 +1592,11 @@ function App() {
           </section>
         ) : null}
 
-        <section className="panel">
+        <section className="panel panel-roster">
           <div className="section-heading">
             <div>
               <p className="section-tag">Roster</p>
-              <h2>Ready to play</h2>
+              <h2>Ready to play <span className="roster-count-pill">{players.length}</span></h2>
             </div>
             <button className="panel-toggle" type="button" onClick={() => toggleSection('roster')}>
               {sectionOpen.roster ? 'Collapse' : 'Expand'}
@@ -1610,13 +1610,16 @@ function App() {
               </div>
             ) : (
               <div className="roster-list">
-                {players.map((player) => (
+                {players.map((player, index) => (
                   <div className="player-chip" key={player.id}>
-                    <div>
-                      <strong>{player.name}</strong>
-                      <span>
-                        {fairness[player.id]?.assigned ?? 0} turns · {fairness[player.id]?.rests ?? 0} rests
-                      </span>
+                    <div className="player-chip-identity">
+                      <span className="player-row-number">{index + 1}</span>
+                      <div>
+                        <strong>{player.name}</strong>
+                        <span className="player-chip-meta">
+                          {fairness[player.id]?.assigned ?? 0} turns · {fairness[player.id]?.rests ?? 0} rests
+                        </span>
+                      </div>
                     </div>
 
                     {rounds.length === 0 ? (

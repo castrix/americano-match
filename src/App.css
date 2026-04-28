@@ -492,6 +492,21 @@
   gap: 10px;
 }
 
+.roster-count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(46, 230, 166, 0.12);
+  border: 1px solid rgba(46, 230, 166, 0.25);
+  color: #89ffd8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  vertical-align: middle;
+  letter-spacing: 0.04em;
+}
+
 .player-chip {
   display: flex;
   align-items: center;
@@ -503,13 +518,36 @@
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.player-chip-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.player-row-number {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(46, 230, 166, 0.12);
+  border: 1px solid rgba(46, 230, 166, 0.25);
+  color: #89ffd8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .player-chip strong,
 .team-line strong,
 table td {
   color: var(--text);
 }
 
-.player-chip span {
+.player-chip-meta {
   display: block;
   margin-top: 2px;
   color: var(--muted);
@@ -1014,5 +1052,25 @@ table td {
 
   .match-grid {
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .panel-roster {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    min-height: 0;
+  }
+
+  .panel-roster .roster-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    max-height: 530px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+
+  .panel-roster .empty-state {
+    flex: 1;
   }
 }
