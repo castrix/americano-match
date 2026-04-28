@@ -288,6 +288,60 @@
   padding-right: 42px;
 }
 
+.skill-level-selector {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.skill-level-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 68px;
+  padding: 10px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, filter 0.2s ease;
+}
+
+.skill-level-button span {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.skill-level-button small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.skill-level-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.skill-level-button:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.skill-level-button-active {
+  border-color: rgba(46, 230, 166, 0.42);
+  background: rgba(46, 230, 166, 0.12);
+  color: #89ffd8;
+}
+
+.skill-level-button-active small {
+  color: #b8ffe7;
+}
+
 .primary-button,
 .ghost-button,
 .player-chip button {
@@ -365,7 +419,8 @@
 .ghost-button:disabled,
 .player-chip button:disabled,
 .field-step-button:disabled,
-.score-step-button:disabled {
+.score-step-button:disabled,
+.skill-level-button:disabled {
   opacity: 0.58;
   cursor: not-allowed;
 }
@@ -383,7 +438,7 @@
 
 .meta-strip {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin-top: 14px;
 }
@@ -401,6 +456,33 @@
 }
 
 .meta-strip span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.skill-level-panel {
+  margin-top: 14px;
+}
+
+.skill-level-tag {
+  margin-bottom: 8px;
+}
+
+.skill-duration-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.skill-duration-card strong {
+  font-size: 1.1rem;
+}
+
+.skill-duration-card span {
   color: var(--muted);
   font-size: 0.78rem;
 }
@@ -505,6 +587,7 @@ table td {
 .round-head-toggle:focus-visible,
 .primary-button:focus-visible,
 .ghost-button:focus-visible,
+.skill-level-button:focus-visible,
 .player-chip button:focus-visible {
   outline: 2px solid rgba(46, 230, 166, 0.55);
   outline-offset: 2px;
@@ -621,7 +704,8 @@ table td {
   gap: 6px;
 }
 
-.score-input {
+.score-input,
+.field-with-steps {
   padding-top: 10px;
   padding-bottom: 10px;
   text-align: center;

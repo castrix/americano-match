@@ -7,14 +7,29 @@ const SHARE_KEY = 'share'
 const SHARE_STATE_VERSION = 3
 const APP_PUBLIC_URL = 'https://castrix.github.io/americano-match/'
 const GITHUB_PROFILE_URL = 'https://github.com/castrix'
+const SKILL_LEVEL_OPTIONS = [1, 2, 3, 4, 5]
+const ROUND_MINUTES_BY_SKILL_LEVEL = {
+  1: 5,
+  2: 7,
+  3: 9,
+  4: 11,
+  5: 13,
+}
+const ROUND_TRANSITION_MINUTES = 3
 const DEFAULT_STATE = {
   players: [],
   courtCount: 1,
+  skillLevel: 1,
   rounds: [],
 }
 
 function createId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function clampSkillLevel(value) {
+  const nextValue = Math.round(Number(value) || DEFAULT_STATE.skillLevel)
+  return Math.min(5, Math.max(1, nextValue))
 }
 
 function normalizeState(candidate) {
@@ -66,6 +81,7 @@ function normalizeState(candidate) {
   return {
     players,
     courtCount: Math.max(1, Number(candidate?.courtCount) || DEFAULT_STATE.courtCount),
+    skillLevel: clampSkillLevel(candidate?.skillLevel),
     rounds,
   }
 }
@@ -94,6 +110,7 @@ function serializeStateForShare(state) {
     v: SHARE_STATE_VERSION,
     p: state.players.map((player) => player.name),
     c: Math.max(1, Number(state.courtCount) || 1),
+    s: clampSkillLevel(state.skillLevel),
     r: compactRounds,
   }
 }
@@ -158,6 +175,7 @@ function deserializeSharedState(candidate) {
   return {
     players,
     courtCount: Math.max(1, Number(candidate.c) || 1),
+    skillLevel: clampSkillLevel(candidate.s),
     rounds,
   }
 }
@@ -677,6 +695,39 @@ function formatStamp(timestamp) {
   }).format(new Date(timestamp))
 }
 
+function getEstimatedRoundMinutes(skillLevel) {
+  return ROUND_MINUTES_BY_SKILL_LEVEL[clampSkillLevel(skillLevel)] ?? ROUND_MINUTES_BY_SKILL_LEVEL[3]
+}
+
+function getEstimatedTournamentRounds(playerCount, courtCount) {
+  const safePlayerCount = Math.max(0, Number(playerCount) || 0)
+  const playableCourts = Math.min(Math.max(1, Number(courtCount) || 1), Math.floor(safePlayerCount / 4))
+
+  if (safePlayerCount < 4 || playableCourts === 0) {
+    return 0
+  }
+
+  return Math.ceil((safePlayerCount * Math.max(safePlayerCount - 1, 0)) / (playableCourts * 4))
+}
+
+function getEstimatedTournamentDurationMinutes(playerCount, courtCount, skillLevel) {
+  const estimatedRounds = getEstimatedTournamentRounds(playerCount, courtCount)
+
+  if (estimatedRounds === 0) {
+    return 0
+  }
+
+  return estimatedRounds * (getEstimatedRoundMinutes(skillLevel) + ROUND_TRANSITION_MINUTES)
+}
+
+function formatDuration(totalMinutes) {
+  const safeMinutes = Math.max(0, Math.round(Number(totalMinutes) || 0))
+  const hours = Math.floor(safeMinutes / 60)
+  const minutes = safeMinutes % 60
+
+  return `${hours}h ${String(minutes).padStart(2, '0')}m`
+}
+
 function toOpaqueColor(input, fallback) {
   if (!input) {
     return fallback
@@ -915,7 +966,7 @@ function App() {
       : 'Add players, set the courts, and generate the next fair round.',
   )
 
-  const { players, courtCount, rounds } = appState
+  const { players, courtCount, rounds, skillLevel } = appState
 
   useEffect(() => {
     if (isSharedReadOnly) {
@@ -948,6 +999,12 @@ function App() {
   )
   const activeCourts = Math.min(courtCount, Math.floor(players.length / 4))
   const benchCount = Math.max(players.length - activeCourts * 4, 0)
+  const estimatedTournamentRounds = getEstimatedTournamentRounds(players.length, courtCount)
+  const estimatedDuration = formatDuration(
+    rounds.length > 0
+      ? rounds.length * (getEstimatedRoundMinutes(skillLevel) + ROUND_TRANSITION_MINUTES)
+      : getEstimatedTournamentDurationMinutes(players.length, courtCount, skillLevel),
+  )
 
   function showReadOnlyMessage() {
     setStatusMessage('Shared view is read-only. Open app without share URL to edit.')
@@ -1252,6 +1309,18 @@ function App() {
     }))
   }
 
+  function handleSkillLevelChange(nextValue) {
+    if (isSharedReadOnly) {
+      showReadOnlyMessage()
+      return
+    }
+
+    setAppState((currentState) => ({
+      ...currentState,
+      skillLevel: clampSkillLevel(nextValue),
+    }))
+  }
+
   async function handleShareReadOnly() {
     const shareUrl = createShareUrl(appState)
 
@@ -1406,7 +1475,7 @@ function App() {
             </div>
 
             <form className="player-form" onSubmit={handleAddPlayer}>
-              <div className="input-stack input-stack-wide">
+              <div className="input-stack">
                 <label htmlFor="playerName">Player name</label>
                 <div className="field-inline-action">
                   <input
@@ -1439,7 +1508,7 @@ function App() {
                   <input
                     id="courtCount"
                     className="field field-with-steps"
-                    type="number"
+                    type="numeric"
                     min="1"
                     max="12"
                     value={courtCount}
@@ -1477,7 +1546,8 @@ function App() {
 
             <p className="helper-text">
               The round builder prioritizes players with the fewest turns and the longest wait, then avoids
-              repeating partners and opponents when possible.
+              repeating partners and opponents when possible. Duration uses common Americano timing: 21-point
+              rounds or short fixed blocks, adjusted faster as skill rises.
             </p>
 
             <div className="meta-strip">
@@ -1488,6 +1558,35 @@ function App() {
               <div>
                 <strong>{benchCount}</strong>
                 <span>resting player slots</span>
+              </div>
+              <div>
+                <strong>{estimatedTournamentRounds}</strong>
+                <span>estimated full rounds</span>
+              </div>
+            </div>
+
+            <div className="skill-level-panel">
+              <p className="section-tag skill-level-tag">Skill level</p>
+              <div className="skill-level-selector" role="group" aria-label="Select average skill level">
+                {SKILL_LEVEL_OPTIONS.map((level) => (
+                  <button
+                    key={level}
+                    id={`skill-level-${level}`}
+                    className={`skill-level-button ${skillLevel === level ? 'skill-level-button-active' : ''}`}
+                    type="button"
+                    onClick={() => handleSkillLevelChange(level)}
+                    disabled={isSharedReadOnly}
+                    aria-pressed={skillLevel === level}
+                  >
+                    <span>{level}</span>
+                    <small>{level === 1 ? 'Casual' : level === 5 ? 'Strong' : 'Level'}</small>
+                  </button>
+                ))}
+              </div>
+
+              <div className="skill-duration-card">
+                <strong>{estimatedDuration}</strong>
+                <span>estimated total duration</span>
               </div>
             </div>
           </section>
