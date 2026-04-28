@@ -4,8 +4,7 @@ import './App.css'
 
 const STORAGE_KEY = 'americano-match-state-v1'
 const SHARE_KEY = 'share'
-const SHARE_CIPHER_KEY = 'americano-share-v1'
-const SHARE_STATE_VERSION = 2
+const SHARE_STATE_VERSION = 3
 const APP_PUBLIC_URL = 'https://castrix.github.io/americano-match/'
 const GITHUB_PROFILE_URL = 'https://github.com/castrix'
 const DEFAULT_STATE = {
@@ -69,26 +68,6 @@ function normalizeState(candidate) {
     courtCount: Math.max(1, Number(candidate?.courtCount) || DEFAULT_STATE.courtCount),
     rounds,
   }
-}
-
-function toBase64Url(bytes) {
-  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('')
-  return window
-    .btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '')
-}
-
-function fromBase64Url(encoded) {
-  const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = `${base64}${'='.repeat((4 - (base64.length % 4 || 4)) % 4)}`
-  const binary = window.atob(padded)
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0))
-}
-
-function xorCipher(bytes, keyBytes) {
-  return bytes.map((byte, index) => byte ^ keyBytes[index % keyBytes.length])
 }
 
 function serializeStateForShare(state) {
@@ -188,18 +167,7 @@ function encodeShareState(state) {
     return ''
   }
 
-  const encoder = new TextEncoder()
-  const compressed = compressToEncodedURIComponent(JSON.stringify(serializeStateForShare(state)))
-
-  if (!compressed) {
-    return ''
-  }
-
-  const jsonBytes = encoder.encode(compressed)
-  const keyBytes = encoder.encode(SHARE_CIPHER_KEY)
-  const cipherBytes = xorCipher(jsonBytes, keyBytes)
-
-  return toBase64Url(cipherBytes)
+  return compressToEncodedURIComponent(JSON.stringify(serializeStateForShare(state))) || ''
 }
 
 function decodeShareState(payload) {
@@ -208,28 +176,19 @@ function decodeShareState(payload) {
   }
 
   try {
-    const decoder = new TextDecoder()
-    const keyBytes = new TextEncoder().encode(SHARE_CIPHER_KEY)
-    const cipherBytes = fromBase64Url(payload)
-    const plainBytes = xorCipher(cipherBytes, keyBytes)
-    const decodedPayload = decoder.decode(plainBytes)
+    const decompressed = decompressFromEncodedURIComponent(payload)
 
-    const decompressed = decompressFromEncodedURIComponent(decodedPayload)
-    if (decompressed) {
-      const parsedState = JSON.parse(decompressed)
-
-      const compactState = deserializeSharedState(parsedState)
-      if (compactState) {
-        return normalizeState(compactState)
-      }
-
-      return normalizeState(parsedState)
+    if (!decompressed) {
+      return null
     }
 
-    // Backward compatibility for links created before compression rollout.
-    const parsedState = JSON.parse(decodedPayload)
+    const compact = deserializeSharedState(JSON.parse(decompressed))
 
-    return normalizeState(parsedState)
+    if (!compact) {
+      return null
+    }
+
+    return normalizeState(compact)
   } catch {
     return null
   }
@@ -1086,6 +1045,51 @@ function App() {
     }
   }
 
+  function handleGenerateBulkRounds() {
+    if (isSharedReadOnly) {
+      showReadOnlyMessage()
+      return
+    }
+
+    if (players.length < 4) {
+      setStatusMessage('Add at least 4 players to generate rounds.')
+      return
+    }
+
+    const startFairness = buildFairness(players, rounds)
+    const currentMin = Math.min(...players.map((player) => startFairness[player.id]?.assigned ?? 0))
+    const targetMin = currentMin + 1
+
+    let simulatedRounds = [...rounds]
+    let generatedCount = 0
+    const safety = 60
+
+    for (let i = 0; i < safety; i++) {
+      const currentFairness = buildFairness(players, simulatedRounds)
+      const allReachedTarget = players.every((player) => (currentFairness[player.id]?.assigned ?? 0) >= targetMin)
+
+      if (allReachedTarget) break
+
+      const currentLeaderboard = buildLeaderboard(players, simulatedRounds)
+      const round = createRound(players, simulatedRounds, courtCount, currentLeaderboard)
+
+      if (!round) break
+
+      simulatedRounds = [...simulatedRounds, round]
+      generatedCount++
+    }
+
+    if (generatedCount === 0) {
+      setStatusMessage('Could not generate more rounds. Check player and court count.')
+      return
+    }
+
+    setAppState((currentState) => ({ ...currentState, rounds: simulatedRounds }))
+    setStatusMessage(
+      `${generatedCount} round${generatedCount > 1 ? 's' : ''} generated — everyone now has at least ${targetMin} turn${targetMin > 1 ? 's' : ''}.`,
+    )
+  }
+
   function handleScoreChange(roundId, matchId, field, nextValue) {
     if (isSharedReadOnly) {
       showReadOnlyMessage()
@@ -1404,15 +1408,20 @@ function App() {
             <form className="player-form" onSubmit={handleAddPlayer}>
               <div className="input-stack input-stack-wide">
                 <label htmlFor="playerName">Player name</label>
-                <input
-                  id="playerName"
-                  className="field"
-                  type="text"
-                  value={playerName}
-                  onChange={(event) => setPlayerName(event.target.value)}
-                  placeholder="e.g. Ihsan"
-                  disabled={isSharedReadOnly}
-                />
+                <div className="field-inline-action">
+                  <input
+                    id="playerName"
+                    className="field field-with-inline-action"
+                    type="text"
+                    value={playerName}
+                    onChange={(event) => setPlayerName(event.target.value)}
+                    placeholder="e.g. Ihsan"
+                    disabled={isSharedReadOnly}
+                  />
+                  <button className="field-inline-button" type="submit" disabled={isSharedReadOnly}>
+                    Add
+                  </button>
+                </div>
               </div>
 
               <div className="input-stack">
@@ -1449,14 +1458,14 @@ function App() {
                 </div>
               </div>
 
-              <button className="primary-button" type="submit" disabled={isSharedReadOnly}>
-                Add player
-              </button>
             </form>
 
             <div className="action-row">
               <button className="primary-button" type="button" onClick={handleGenerateRound} disabled={isSharedReadOnly}>
                 Generate match
+              </button>
+              <button className="primary-button" type="button" onClick={handleGenerateBulkRounds} disabled={isSharedReadOnly}>
+                Generate auto
               </button>
               <button className="ghost-button" type="button" onClick={handleResetTournament} disabled={isSharedReadOnly}>
                 Reset all

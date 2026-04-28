@@ -244,8 +244,42 @@
 }
 
 .field-input-wrap,
-.score-input-wrap {
+.score-input-wrap,
+.field-inline-action {
   position: relative;
+}
+
+.field-with-inline-action {
+  padding-right: 72px;
+}
+
+.field-inline-button {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: calc(100% - 12px);
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--primary);
+  background: rgba(46, 230, 166, 0.12);
+  color: #89ffd8;
+  border: 1px solid rgba(46, 230, 166, 0.34);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+  white-space: nowrap;
+}
+
+.field-inline-button:hover {
+  opacity: 0.85;
+}
+
+.field-inline-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .field-with-steps,
@@ -261,6 +295,7 @@
   border-radius: 14px;
   cursor: pointer;
   transition: transform 0.2s ease, opacity 0.2s ease, filter 0.2s ease;
+  font-size: 14px;
 }
 
 .primary-button,
@@ -818,7 +853,7 @@ table td {
   }
 
   .action-row {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .match-grid {
